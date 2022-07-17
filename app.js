@@ -4,6 +4,7 @@ const server = require("http").Server(app);
 const io = require("socket.io")(server);
 
 let connectedUsers = [];
+let calledUsers = [];
 
 const addUser = (username, socketId) => {
   !connectedUsers.some((user) => user.username === username) &&
@@ -11,6 +12,25 @@ const addUser = (username, socketId) => {
       username,
       socketId,
     });
+};
+
+const callUser = (participants) => {
+  !calledUsers.some(
+    (user) =>
+      user.callee === participants.callee && user.caller === participants.caller
+  ) &&
+    calledUsers.push({
+      caller: participants.caller,
+      callee: participants.callee,
+      callerImage: participants.callerImage,
+    });
+};
+
+const removeCallUser = (participants) => {
+  calledUsers = calledUsers.filter(
+    (user) =>
+      user.callee === participants.callee && user.caller === participants.caller
+  );
 };
 
 const findUser = (username) => {
@@ -28,7 +48,36 @@ io.on("connection", (socket) => {
   socket.on("addUser", (username) => {
     console.log("user added");
     addUser(username, socket.id);
-    socket.emit("getAllOnlineUsers", connectedUsers);
+    io.emit("getAllOnlineUsers", connectedUsers);
+  });
+
+  socket.on("callUser", (participants) => {
+    console.log("calling " + participants.callee);
+    callUser(participants);
+    // socket.emit("calledUsers", calledUsers);
+    socket.broadcast.emit("calledUsers", calledUsers);
+  });
+
+  socket.on("callRejection", (participants) => {
+    console.log("Call rejected by " + participants.doer);
+    removeCallUser({ callee: participants.doer, caller: participants.seer });
+    removeCallUser({ caller: participants.doer, callee: participants.seer });
+    socket.broadcast.emit("callRejectionList", participants);
+    socket.broadcast.emit("calledUsers", calledUsers);
+  });
+
+  socket.on("callAccepted", (participants) => {
+    console.log("call accepted by " + participants.doer);
+    // const socketId = connectedUsers.find(
+    //   (item) => item.username == participants.seer
+    // );
+    // if (socketId) {
+    //   io.to(socketId).emit("UserAcceptedCall", "true");
+    // }
+    socket.broadcast.emit("UserAcceptedCall", {
+      seer: participants.seer,
+      doer: participants.doer,
+    });
   });
 
   socket.on("sendMessage", (message) => {
@@ -55,7 +104,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("A user disconnected");
     removeUser(socket.id);
-    socket.emit("getAllOnlineUsers", connectedUsers);
+    io.emit("getAllOnlineUsers", connectedUsers);
   });
 });
 
